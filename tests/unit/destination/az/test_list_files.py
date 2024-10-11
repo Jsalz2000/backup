@@ -84,3 +84,12 @@ def test_list_files_prefix():
     blob_names_recursive = c._list_files(PREFIX, False, False)
 
     assert blob_names == blob_names_recursive
+
+def test_list_files_remote_path():
+    """Tests AZ.list_files method, strips remote path from blob names"""
+    c = mocked_az()
+    c._container_client.list_blobs.return_value = BLOBS + [BlobProperties(name="himom/blob4")]
+
+    blob_names = c._list_files(PREFIX, False, True)
+
+    assert blob_names == ["blob2", "blob3", "blob4"]

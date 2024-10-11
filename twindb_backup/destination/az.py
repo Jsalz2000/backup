@@ -239,7 +239,7 @@ class AZ(BaseDestination):
             raise err
 
         return [
-            blob.name
+            blob.name.strip(self._remote_path).strip('/')
             for blob in blobs
             if not files_only
             or not (bool(blob.get("metadata")) and blob.get("metadata", {}).get("hdi_isfolder") == "true")
