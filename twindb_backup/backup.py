@@ -102,7 +102,7 @@ def backup_files(run_type, config: TwinDBBackupConfig):
     )
 
 
-def backup_mysql(run_type, config):
+def backup_mysql(run_type, config: TwinDBBackupConfig):
     """Take backup of local MySQL instance
 
     :param run_type: Run type
@@ -129,8 +129,10 @@ def backup_mysql(run_type, config):
         kwargs["parent_lsn"] = parent.lsn
 
     LOG.debug("Creating source %r", kwargs)
-    mysql_client = MySQLClient(config.mysql.defaults_file)
-    src = MYSQL_SRC_MAP[mysql_client.server_vendor](MySQLConnectInfo(config.mysql.defaults_file), run_type, **kwargs)
+    mysql_client = MySQLClient(defaults_file=config.mysql.defaults_file, hostname=config.mysql.hostname)
+    src = MYSQL_SRC_MAP[mysql_client.server_vendor](
+        MySQLConnectInfo(defaults_file=config.mysql.defaults_file, hostname=config.mysql.hostname), run_type, **kwargs
+    )
 
     callbacks = []
     try:
@@ -173,7 +175,7 @@ def backup_mysql(run_type, config):
         callback[0].callback(**callback[1])
 
 
-def backup_binlogs(run_type, config):  # pylint: disable=too-many-locals
+def backup_binlogs(run_type, config: TwinDBBackupConfig):  # pylint: disable=too-many-locals
     """Copy MySQL binlog files to the backup destination.
 
     :param run_type: Run type
@@ -187,7 +189,7 @@ def backup_binlogs(run_type, config):  # pylint: disable=too-many-locals
 
     dst = config.destination()
     status = BinlogStatus(dst=dst)
-    mysql_client = MySQLClient(defaults_file=config.mysql.defaults_file)
+    mysql_client = MySQLClient(defaults_file=config.mysql.defaults_file, hostname=config.mysql.hostname)
     log_bin_basename = mysql_client.variable("log_bin_basename")
     if log_bin_basename is None:
         return

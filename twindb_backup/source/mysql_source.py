@@ -216,7 +216,7 @@ class MySQLSource(BaseSource):  # pylint: disable=too-many-instance-attributes
             self._xtrabackup,
             "--defaults-file=%s" % self._connect_info.defaults_file,
             "--stream=xbstream",
-            "--host=127.0.0.1",
+            f"--host={self._connect_info.hostname}",
             "--backup",
         ]
         cmd += ["--target-dir", "."]

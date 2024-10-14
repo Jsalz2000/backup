@@ -151,6 +151,7 @@ The ``expire_log_days`` options specifies the retention period for MySQL binlogs
     mysql_defaults_file = /etc/twindb/my.cnf
     full_backup = daily
     expire_log_days = 7
+    hostname = localhost # optional, defaults to 127.0.0.1
 
 Backing up MySQL Binlog
 -----------------------
