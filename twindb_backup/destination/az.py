@@ -47,7 +47,7 @@ class AZ(BaseDestination):
         self._connection_string = connection_string
         self._hostname = hostname
         self._chunk_size = chunk_size
-        self._remote_path = remote_path
+        self._remote_path = remote_path.strip('/') if remote_path != '/' else remote_path
         super(AZ, self).__init__(self._remote_path)
 
         self._container_client = self._connect()
@@ -94,7 +94,7 @@ class AZ(BaseDestination):
         Returns:
             str: Absolute path to the blob in the container
         """
-        return f"{self._remote_path}/{path}"
+        return f"{self._remote_path}/{path}".strip('/')
 
     def _download_to_pipe(self, blob_key: str, pipe_in: int, pipe_out: int) -> None:
         """Downloads a blob from Azure Blob Storage and writes it to a pipe
@@ -226,12 +226,12 @@ class AZ(BaseDestination):
                 otherwise includes files and directories. Defaults to False.
         """
         LOG.debug(
-            f"""Listing files in container {self._container_name} with prefix={prefix},
+            f"""Listing files in container {self._container_name} with prefix={prefix.strip('/')},
               recursive={recursive}, files_only={files_only}"""
         )
 
         try:
-            blobs = self._container_client.list_blobs(name_starts_with=prefix, include=["metadata"])
+            blobs = self._container_client.list_blobs(name_starts_with=prefix.strip('/'), include=["metadata"])
         except builtins.Exception as err:
             LOG.error(
                 f"Failed to list files in container {self._container_name}. Error: {type(err).__name__}, Reason: {err}"

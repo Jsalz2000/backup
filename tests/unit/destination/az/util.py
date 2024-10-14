@@ -14,7 +14,7 @@ class AZParams(collections.Mapping):
         if not only_required:
             self.hostname = "test_host"
             self.chunk_size = 123
-            self.remote_path = "/himom"
+            self.remote_path = "/himom/"
 
     def __iter__(self):
         return iter(self.__dict__)
@@ -33,7 +33,7 @@ class AZConfigParams(collections.Mapping):
 
         if not only_required:
             self.chunk_size = 123
-            self.remote_path = "/himom"
+            self.remote_path = "/himom/"
 
     def __iter__(self):
         return iter(self.__dict__)

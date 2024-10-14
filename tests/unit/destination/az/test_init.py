@@ -21,7 +21,7 @@ def test_init_param():
         assert c._connection_string == p.connection_string
         assert c._hostname == p.hostname
         assert c._chunk_size == p.chunk_size
-        assert c._remote_path == p.remote_path
+        assert c._remote_path == p.remote_path.strip('/') if p.remote_path != '/' else p.remote_path
         assert isinstance(c._container_client, ContainerClient)
         az.AZ._connect.assert_called_once()
 

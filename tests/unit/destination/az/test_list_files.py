@@ -35,7 +35,7 @@ def test_list_files_fail():
     with pytest.raises(Exception):
         c._list_files(PREFIX, False, False)
 
-    c._container_client.list_blobs.assert_called_once_with(name_starts_with=PREFIX, include=["metadata"])
+    c._container_client.list_blobs.assert_called_once_with(name_starts_with=PREFIX.strip('/'), include=["metadata"])
 
 
 def test_list_files_files_only():
@@ -47,7 +47,7 @@ def test_list_files_files_only():
 
     assert blob_names == ["blob2", "blob3"]
 
-    c._container_client.list_blobs.assert_called_once_with(name_starts_with=PREFIX, include=["metadata"])
+    c._container_client.list_blobs.assert_called_once_with(name_starts_with=PREFIX.strip('/'), include=["metadata"])
 
 
 def test_list_files_all_files():
@@ -59,7 +59,7 @@ def test_list_files_all_files():
 
     assert blob_names == [b.name for b in BLOBS]
 
-    c._container_client.list_blobs.assert_called_once_with(name_starts_with=PREFIX, include=["metadata"])
+    c._container_client.list_blobs.assert_called_once_with(name_starts_with=PREFIX.strip('/'), include=["metadata"])
 
 
 def test_list_files_recursive():
@@ -71,7 +71,7 @@ def test_list_files_recursive():
     blob_names_recursive = c._list_files(PREFIX, True, False)
 
     assert blob_names == blob_names_recursive
-    c._container_client.list_blobs.assert_called_with(name_starts_with=PREFIX, include=["metadata"])
+    c._container_client.list_blobs.assert_called_with(name_starts_with=PREFIX.strip('/'), include=["metadata"])
 
 
 def test_list_files_prefix():
@@ -88,8 +88,8 @@ def test_list_files_prefix():
 def test_list_files_remote_path():
     """Tests AZ.list_files method, strips remote path from blob names"""
     c = mocked_az()
-    c._container_client.list_blobs.return_value = BLOBS + [BlobProperties(name="himom/blob4")]
+    c._container_client.list_blobs.return_value = BLOBS + [BlobProperties(name="himom/backups/blob4")]
 
     blob_names = c._list_files(PREFIX, False, True)
 
-    assert blob_names == ["blob2", "blob3", "blob4"]
+    assert blob_names == ["blob2", "blob3", "backups/blob4"]
