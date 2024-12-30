@@ -102,6 +102,22 @@ In the ``[az]`` section you specify Azure credentials as well as Azure Blob Stor
     container_name = twindb-backups
     remote_path = /backups/mysql # optional
 
+In the ``[az.client]`` section you specify optional Azure Blob Storage client options.
+
+.. code-block:: ini
+
+    [az.client]
+
+    api_version = "2019-02-02"
+    secondary_hostname = "ACCOUNT_NAME-secondary.blob.core.windows.net"
+    max_block_size = 4194304
+    max_single_put_size = 67108864
+    min_large_block_upload_threshold = 4194305
+    use_byte_buffer = yes
+    max_page_size = 4194304
+    max_single_get_size = 33554432
+    max_chunk_get_size = 4194304
+    audience = "https://storage.azure.com/"
 
 Google Cloud Storage
 ~~~~~~~~~~~~~~~~~~~~
