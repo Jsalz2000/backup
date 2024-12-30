@@ -7,12 +7,14 @@ import os
 import socket
 import typing as t
 from contextlib import contextmanager
+from dataclasses import asdict
 from multiprocessing import Process
 
 import azure.core.exceptions as ae
 from azure.storage.blob import ContainerClient
 
 from twindb_backup import LOG
+from twindb_backup.configuration.destinations.az import AZConfig, drop_empty_dict_factory
 from twindb_backup.copy.base_copy import BaseCopy
 from twindb_backup.destination.base_destination import BaseDestination
 from twindb_backup.destination.exceptions import FileNotFound
@@ -21,36 +23,21 @@ from twindb_backup.destination.exceptions import FileNotFound
 class AZ(BaseDestination):
     """Azure Blob Storage Destination class"""
 
-    def __init__(
-        self,
-        container_name: str,
-        connection_string: str,
-        hostname: str = socket.gethostname(),
-        chunk_size: int = 4 * 1024 * 1024,  # TODO: Add support for chunk size
-        remote_path: str = "/",
-    ) -> None:
+    def __init__(self, config: AZConfig) -> None:
         """Creates an instance of the Azure Blob Storage Destination class,
           initializes the ContainerClient and validates the connection settings
 
         Args:
-            container_name (str): Name of the container in the Azure storage account
-            connection_string (str): Connection string for the Azure storage account
-            hostname (str, optional): Hostname of the host performing the backup. Defaults to socket.gethostname().
-            chunk_size (int, optional): Size in bytes for read/write streams. Defaults to 4*1024*1024.
-            remote_path (str, optional): Remote base path in the container to store backups. Defaults to "/".
+            config (AZConfig): Azure Blob Storage Configuration
 
         Raises:
             err: Raises an error if the client cannot be initialized
         """
+        self.config = config
 
-        self._container_name = container_name
-        self._connection_string = connection_string
-        self._hostname = hostname
-        self._chunk_size = chunk_size
-        self._remote_path = remote_path.strip("/") if remote_path != "/" else remote_path
-        super(AZ, self).__init__(self._remote_path)
+        super(AZ, self).__init__(self.config.remote_path)
 
-        self._container_client = self._connect()
+        self.container_client = self._connect()
 
     """HELPER FUNCTIONS
     """
@@ -70,7 +57,11 @@ class AZ(BaseDestination):
 
         # Create the container client - validates connection string format
         try:
-            client = ContainerClient.from_connection_string(self._connection_string, self._container_name)
+            client = ContainerClient.from_connection_string(
+                conn_str=self.config.connection_string,
+                container_name=self.config.container_name,
+                **asdict(self.config.client_config, dict_factory=drop_empty_dict_factory),
+            )
         except builtins.ValueError as err:
             LOG.error(f"Failed to create Azure Client. Error: {type(err).__name__}, Reason: {err}")
             raise err
@@ -94,7 +85,7 @@ class AZ(BaseDestination):
         Returns:
             str: Absolute path to the blob in the container
         """
-        return f"{self._remote_path}/{path}".strip("/")
+        return f"{self.config.remote_path}/{path}".strip("/")
 
     def _download_to_pipe(self, blob_key: str, pipe_in: int, pipe_out: int) -> None:
         """Downloads a blob from Azure Blob Storage and writes it to a pipe
@@ -107,7 +98,7 @@ class AZ(BaseDestination):
         os.close(pipe_in)
         with os.fdopen(pipe_out, "wb") as pipe_out_file:
             try:
-                self._container_client.download_blob(blob_key).readinto(pipe_out_file)
+                self.container_client.download_blob(blob_key).readinto(pipe_out_file)
             except builtins.Exception as err:
                 LOG.error(f"Failed to download blob {blob_key}. Error: {type(err).__name__}, Reason: {err}")
                 raise err
@@ -126,7 +117,7 @@ class AZ(BaseDestination):
         """
         LOG.debug(f"Attempting to delete blob: {self.render_path(path)}")
         try:
-            self._container_client.delete_blob(self.render_path(path))
+            self.container_client.delete_blob(self.render_path(path))
         except builtins.Exception as err:
             LOG.error(f"Failed to delete blob {self.render_path(path)}. Error: {type(err).__name__}, Reason: {err}")
             raise err
@@ -171,10 +162,12 @@ class AZ(BaseDestination):
         """
         LOG.debug(f"Attempting to read blob: {self.render_path(filepath)}")
         try:
-            return self._container_client.download_blob(self.render_path(filepath), encoding="utf-8").read()
+            return self.container_client.download_blob(self.render_path(filepath), encoding="utf-8").read()
         except ae.ResourceNotFoundError:
-            LOG.debug(f"File {self.render_path(filepath)} does not exist in container {self._container_name}")
-            raise FileNotFound(f"File {self.render_path(filepath)} does not exist in container {self._container_name}")
+            LOG.debug(f"File {self.render_path(filepath)} does not exist in container {self.config.container_name}")
+            raise FileNotFound(
+                f"File {self.render_path(filepath)} does not exist in container {self.config.container_name}"
+            )
         except builtins.Exception as err:
             LOG.error(f"Failed to read blob {self.render_path(filepath)}. Error: {type(err).__name__}, Reason: {err}")
             raise err
@@ -193,7 +186,7 @@ class AZ(BaseDestination):
         LOG.debug(f"Attempting to save blob: {self.render_path(filepath)}")
         with handler as file_obj:
             try:
-                self._container_client.upload_blob(self.render_path(filepath), file_obj)
+                self.container_client.upload_blob(self.render_path(filepath), file_obj)
             except builtins.Exception as err:
                 LOG.error(f"Failed to upload blob or it already exists. Error {type(err).__name__}, Reason: {err}")
                 raise err
@@ -211,7 +204,7 @@ class AZ(BaseDestination):
 
         LOG.debug(f"Attempting to write blob: {self.render_path(filepath)}")
         try:
-            self._container_client.upload_blob(self.render_path(filepath), content, overwrite=True)
+            self.container_client.upload_blob(self.render_path(filepath), content, overwrite=True)
         except builtins.Exception as err:
             LOG.error(f"Failed to upload or overwrite blob. Error {type(err).__name__}, Reason: {err}")
             raise err
@@ -226,20 +219,21 @@ class AZ(BaseDestination):
                 otherwise includes files and directories. Defaults to False.
         """
         LOG.debug(
-            f"""Listing files in container {self._container_name} with prefix={prefix.strip('/')},
+            f"""Listing files in container {self.config.container_name} with prefix={prefix.strip('/')},
               recursive={recursive}, files_only={files_only}"""
         )
 
         try:
-            blobs = self._container_client.list_blobs(name_starts_with=prefix.strip("/"), include=["metadata"])
+            blobs = self.container_client.list_blobs(name_starts_with=prefix.strip("/"), include=["metadata"])
         except builtins.Exception as err:
             LOG.error(
-                f"Failed to list files in container {self._container_name}. Error: {type(err).__name__}, Reason: {err}"
+                f"Failed to list files in container {self.config.container_name}. "
+                f"Error: {type(err).__name__}, Reason: {err}"
             )
             raise err
 
         return [
-            blob.name.strip(self._remote_path).strip("/")
+            blob.name.strip(self.config.remote_path).strip("/")
             for blob in blobs
             if not files_only
             or not (bool(blob.get("metadata")) and blob.get("metadata", {}).get("hdi_isfolder") == "true")

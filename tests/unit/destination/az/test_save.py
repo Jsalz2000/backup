@@ -19,7 +19,7 @@ def test_save_success():
 
     c.save(handler, EXAMPLE_FILE)
 
-    c._container_client.upload_blob.assert_called_once_with(c.render_path(EXAMPLE_FILE), file_obj)
+    c.container_client.upload_blob.assert_called_once_with(c.render_path(EXAMPLE_FILE), file_obj)
 
 
 def test_save_fail():
@@ -29,9 +29,9 @@ def test_save_fail():
     file_obj = MagicMock()
     handler.__enter__.return_value = file_obj
     handler.__exit__.return_value = None
-    c._container_client.upload_blob.side_effect = ae.HttpResponseError()
+    c.container_client.upload_blob.side_effect = ae.HttpResponseError()
 
     with pytest.raises(Exception):
         c.save(handler, EXAMPLE_FILE)
 
-    c._container_client.upload_blob.assert_called_once_with(c.render_path(EXAMPLE_FILE), file_obj)
+    c.container_client.upload_blob.assert_called_once_with(c.render_path(EXAMPLE_FILE), file_obj)

@@ -8,7 +8,7 @@ from shlex import split
 
 from twindb_backup import INTERVALS, LOG
 from twindb_backup.configuration.compression import CompressionConfig
-from twindb_backup.configuration.destinations.az import AZConfig
+from twindb_backup.configuration.destinations.az import AZClientConfig, AZConfig
 from twindb_backup.configuration.destinations.gcs import GCSConfig
 from twindb_backup.configuration.destinations.s3 import S3Config
 from twindb_backup.configuration.destinations.ssh import SSHConfig
@@ -103,7 +103,9 @@ class TwinDBBackupConfig:
     def az(self):  # pylint: disable=invalid-name
         """Azure Blob configuration"""
         try:
-            return AZConfig(**self.__read_options_from_section("az"))
+            az_config = self.__read_options_from_section("az")
+            az_client_config = self.__read_options_from_section("az.client")
+            return AZConfig(client_config=AZClientConfig(**az_client_config), **az_config)
 
         except NoSectionError:
             return None
@@ -254,11 +256,7 @@ class TwinDBBackupConfig:
                 )
             elif backup_destination == "az":
                 return AZ(
-                    connection_string=self.az.connection_string,
-                    container_name=self.az.container_name,
-                    chunk_size=self.az.chunk_size,
-                    remote_path=self.az.remote_path,
-                    hostname=backup_source,
+                    config=self.az,
                 )
             else:
                 raise ConfigurationError(f"Unsupported destination '{backup_destination}'")
