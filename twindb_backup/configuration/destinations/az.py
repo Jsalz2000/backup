@@ -1,4 +1,5 @@
 """Azure Blob Storage destination configuration"""
+
 import typing as t
 from dataclasses import dataclass
 
