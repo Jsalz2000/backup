@@ -113,7 +113,7 @@ In the ``[az.client]`` section you specify optional Azure Blob Storage client op
     max_block_size = 4194304
     max_single_put_size = 67108864
     min_large_block_upload_threshold = 4194305
-    use_byte_buffer = yes
+    use_byte_buffer = true
     max_page_size = 4194304
     max_single_get_size = 33554432
     max_chunk_get_size = 4194304

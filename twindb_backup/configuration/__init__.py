@@ -3,6 +3,7 @@
 Module to process configuration file.
 """
 import socket
+import typing as t
 from configparser import ConfigParser, NoOptionError, NoSectionError
 from shlex import split
 
@@ -104,7 +105,7 @@ class TwinDBBackupConfig:
         """Azure Blob configuration"""
         try:
             az_config = self.__read_options_from_section("az")
-            az_client_config = self.__read_options_from_section("az.client")
+            az_client_config = self.__cast_options(self.__read_options_from_section("az.client"))
             return AZConfig(client_config=AZClientConfig(**az_client_config), **az_config)
 
         except NoSectionError:
@@ -278,3 +279,22 @@ class TwinDBBackupConfig:
 
     def __repr__(self):
         return f"{self.__class__.__name__}: {self._config_file}"
+
+    def __cast_options(self, options: t.Dict[str, str]) -> t.Dict[str, t.Union[str, int, bool]]:
+        """Cast options to their correct types
+
+        Args:
+            options (t.Dict[str, str]): A dictionary of kwargs to cast
+
+        Returns:
+            t.Dict[str, t.Union[str, int, bool]]: An updated dictionary with the correct types
+        """
+        for k,v in options.items():
+            if v.lower() == "true":
+                options[k] = True
+            elif v.lower() == "false":
+                options[k] = False
+            elif v.isdigit():
+                options[k] = int(v)
+
+        return options
