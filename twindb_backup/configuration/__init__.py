@@ -105,11 +105,16 @@ class TwinDBBackupConfig:
         """Azure Blob configuration"""
         try:
             az_config = self.__read_options_from_section("az")
-            az_client_config = self.__cast_options(self.__read_options_from_section("az.client"))
-            return AZConfig(client_config=AZClientConfig(**az_client_config), **az_config)
-
         except NoSectionError:
             return None
+
+        az_client_config = {}
+        try:
+            az_client_config = self.__cast_options(self.__read_options_from_section("az.client"))
+        except:
+            pass
+
+        return AZConfig(client_config=AZClientConfig(**az_client_config), **az_config)
 
     @property
     def s3(self):  # pylint: disable=invalid-name
