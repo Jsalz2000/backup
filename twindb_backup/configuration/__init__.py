@@ -104,14 +104,14 @@ class TwinDBBackupConfig:
     def az(self):  # pylint: disable=invalid-name
         """Azure Blob configuration"""
         try:
-            az_config = self.__read_options_from_section("az")
+            az_config = self.__cast_options(self.__read_options_from_section("az"))
         except NoSectionError:
             return None
 
         az_client_config = {}
         try:
             az_client_config = self.__cast_options(self.__read_options_from_section("az.client"))
-        except:
+        except Exception:
             pass
 
         return AZConfig(client_config=AZClientConfig(**az_client_config), **az_config)
@@ -294,7 +294,7 @@ class TwinDBBackupConfig:
         Returns:
             t.Dict[str, t.Union[str, int, bool]]: An updated dictionary with the correct types
         """
-        for k,v in options.items():
+        for k, v in options.items():
             if v.lower() == "true":
                 options[k] = True
             elif v.lower() == "false":

@@ -80,7 +80,8 @@ class AZConfig:
         connection_string (str): Connection string for the Azure storage account.
         container_name (str): Name of the container in the Azure storage account.
         remote_path (str, optional): Remote base path in the container to store backups. Defaults to "/".
-        max_concurrency (int, optional): Maximum number of concurrent requests to the Azure Storage service. Defaults to 1.
+        max_concurrency (int, optional): Maximum number of concurrent requests to the Azure Storage service.
+            Defaults to 1.
     """
 
     client_config: AZClientConfig
