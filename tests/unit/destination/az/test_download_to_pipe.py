@@ -21,7 +21,9 @@ def test_download_to_pipe_success():
 
         mc_os.close.assert_called_once_with(100)
         mc_os.fdopen.assert_called_once_with(200, "wb")
-        c.container_client.download_blob.assert_called_once_with(c.render_path("foo-key"))
+        c.container_client.download_blob.assert_called_once_with(
+            c.render_path("foo-key"), max_concurrency=c.config.max_concurrency
+        )
         mc_dbr.readinto.assert_called_once_with(mc_fdopen.__enter__())
 
 
@@ -37,4 +39,6 @@ def test_download_to_pipe_fail():
 
         mc_os.close.assert_called_once_with(100)
         mc_os.fdopen.assert_called_once_with(200, "wb")
-        c.container_client.download_blob.assert_called_once_with(c.render_path("foo-key"))
+        c.container_client.download_blob.assert_called_once_with(
+            c.render_path("foo-key"), max_concurrency=c.config.max_concurrency
+        )

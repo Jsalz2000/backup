@@ -24,6 +24,7 @@ def test_initialization_success():
         if config_params.remote_path != "/"
         else config_params.remote_path
     )
+    assert c.max_concurrency == config_params.max_concurrency
 
     # AZClientConfig Assertions
     assert c.client_config.api_version == client_params.api_version
@@ -36,6 +37,7 @@ def test_initialization_success():
     assert c.client_config.max_single_get_size == client_params.max_single_get_size
     assert c.client_config.max_chunk_get_size == client_params.max_chunk_get_size
     assert c.client_config.audience == client_params.audience
+    assert c.client_config.connection_timeout == client_params.connection_timeout
 
 
 def test_initialization_success_defaults():
@@ -51,6 +53,7 @@ def test_initialization_success_defaults():
     assert c.connection_string == config_params.connection_string
     assert c.container_name == config_params.container_name
     assert c.remote_path == "/"
+    assert c.max_concurrency == 1
 
     # AZClientConfig Assertions
     assert c.client_config.api_version == None
@@ -63,6 +66,7 @@ def test_initialization_success_defaults():
     assert c.client_config.max_single_get_size == 32 * 1024 * 1024  # 32MB
     assert c.client_config.max_chunk_get_size == 4 * 1024 * 1024  # 4MB
     assert c.client_config.audience == None
+    assert c.client_config.connection_timeout == 20
 
 
 def test_invalid_params():
@@ -82,6 +86,13 @@ def test_invalid_params():
         )
     with pytest.raises(ValueError):  # Invalid container_name
         AZConfig(client_config=AZClientConfig(), connection_string="test_connection_string", container_name=1)
+    with pytest.raises(ValueError):  # Invalid max_concurrency
+        AZConfig(
+            client_config=AZClientConfig(),
+            connection_string="test_connection_string",
+            container_name="test_container",
+            max_concurrency="1",
+        )
 
     # Invalidate AZClientConfig
     with pytest.raises(ValueError):  # Invalid api_version
@@ -104,6 +115,8 @@ def test_invalid_params():
         AZClientConfig(max_chunk_get_size="123")
     with pytest.raises(ValueError):  # Invalid audience
         AZClientConfig(audience=123)
+    with pytest.raises(ValueError):  # Invalid connection_timeout
+        AZClientConfig(connection_timeout="123")
 
 
 def test_drop_empty_dicts_some_undefined():

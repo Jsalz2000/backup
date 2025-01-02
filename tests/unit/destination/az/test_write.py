@@ -13,7 +13,9 @@ def test_write_success():
 
     c.write(CONTENT, EXAMPLE_FILE)
 
-    c.container_client.upload_blob.assert_called_once_with(c.render_path(EXAMPLE_FILE), CONTENT, overwrite=True)
+    c.container_client.upload_blob.assert_called_once_with(
+        c.render_path(EXAMPLE_FILE), CONTENT, overwrite=True, max_concurrency=c.config.max_concurrency
+    )
 
 
 def test_write_fail():
@@ -24,4 +26,6 @@ def test_write_fail():
     with pytest.raises(Exception):
         c.write(CONTENT, EXAMPLE_FILE)
 
-    c.container_client.upload_blob.assert_called_once_with(c.render_path(EXAMPLE_FILE), CONTENT, overwrite=True)
+    c.container_client.upload_blob.assert_called_once_with(
+        c.render_path(EXAMPLE_FILE), CONTENT, overwrite=True, max_concurrency=c.config.max_concurrency
+    )

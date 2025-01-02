@@ -19,7 +19,9 @@ def test_save_success():
 
     c.save(handler, EXAMPLE_FILE)
 
-    c.container_client.upload_blob.assert_called_once_with(c.render_path(EXAMPLE_FILE), file_obj)
+    c.container_client.upload_blob.assert_called_once_with(
+        c.render_path(EXAMPLE_FILE), file_obj, max_concurrency=c.config.max_concurrency
+    )
 
 
 def test_save_fail():
@@ -34,4 +36,6 @@ def test_save_fail():
     with pytest.raises(Exception):
         c.save(handler, EXAMPLE_FILE)
 
-    c.container_client.upload_blob.assert_called_once_with(c.render_path(EXAMPLE_FILE), file_obj)
+    c.container_client.upload_blob.assert_called_once_with(
+        c.render_path(EXAMPLE_FILE), file_obj, max_concurrency=c.config.max_concurrency
+    )

@@ -19,7 +19,9 @@ def test_read_success():
 
     c.read(EXAMPLE_FILE)
 
-    c.container_client.download_blob.assert_called_once_with(c.render_path(EXAMPLE_FILE), encoding="utf-8")
+    c.container_client.download_blob.assert_called_once_with(
+        c.render_path(EXAMPLE_FILE), encoding="utf-8", max_concurrency=c.config.max_concurrency
+    )
     mock.read.assert_called_once()
 
 
@@ -30,7 +32,9 @@ def test_read_fail():
 
     with pytest.raises(Exception):
         c.read(EXAMPLE_FILE)
-    c.container_client.download_blob.assert_called_once_with(c.render_path(EXAMPLE_FILE), encoding="utf-8")
+    c.container_client.download_blob.assert_called_once_with(
+        c.render_path(EXAMPLE_FILE), encoding="utf-8", max_concurrency=c.config.max_concurrency
+    )
 
 
 def test_read_fail_not_found():
@@ -42,4 +46,6 @@ def test_read_fail_not_found():
         FileNotFound, match=f"File {c.render_path(EXAMPLE_FILE)} does not exist in container {c.config.container_name}"
     ):
         c.read(EXAMPLE_FILE)
-    c.container_client.download_blob.assert_called_once_with(c.render_path(EXAMPLE_FILE), encoding="utf-8")
+    c.container_client.download_blob.assert_called_once_with(
+        c.render_path(EXAMPLE_FILE), encoding="utf-8", max_concurrency=c.config.max_concurrency
+    )

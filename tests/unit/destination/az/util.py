@@ -21,6 +21,7 @@ class AZClientConfigParams(collections.Mapping):
             self.max_single_get_size = 128 * 1024 * 1024  # 128MB
             self.max_chunk_get_size = 128 * 1024 * 1024  # 128MB
             self.audience = "https://example.com"
+            self.connection_timeout = 30
 
     def __iter__(self):
         return iter(self.__dict__)
@@ -39,6 +40,7 @@ class AZConfigParams(collections.Mapping):
 
         if not only_required:
             self.remote_path = "/himom/"
+            self.max_concurrency = 4
 
     def __iter__(self):
         return iter(self.__dict__)
