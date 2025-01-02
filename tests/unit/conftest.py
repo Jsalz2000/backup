@@ -32,6 +32,7 @@ BUCKET="twindb-backups"
 connection_string="DefaultEndpointsProtocol=https;AccountName=ACCOUNT_NAME;AccountKey=ACCOUNT_KEY;EndpointSuffix=core.windows.net"
 container_name="twindb-backups"
 remote_path="/backups/mysql"
+max_concurrency=1
 
 [az.client]
 api_version="2019-02-02"
@@ -44,6 +45,7 @@ max_page_size=4194304
 max_single_get_size=33554432
 max_chunk_get_size=4194304
 audience="https://storage.azure.com/"
+connection_timeout=20
 
 [gcs]
 GC_CREDENTIALS_FILE="XXXXX"

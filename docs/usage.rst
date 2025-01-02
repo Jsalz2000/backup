@@ -101,6 +101,7 @@ In the ``[az]`` section you specify Azure credentials as well as Azure Blob Stor
     connection_string = "DefaultEndpointsProtocol=https;AccountName=ACCOUNT_NAME;AccountKey=ACCOUNT_KEY;EndpointSuffix=core.windows.net"
     container_name = twindb-backups
     remote_path = /backups/mysql # optional
+    max_concurrency = 1 # optional
 
 In the ``[az.client]`` section you specify optional Azure Blob Storage client options.
 
@@ -118,6 +119,7 @@ In the ``[az.client]`` section you specify optional Azure Blob Storage client op
     max_single_get_size = 33554432
     max_chunk_get_size = 4194304
     audience = "https://storage.azure.com/"
+    connection_timeout = 20
 
 Google Cloud Storage
 ~~~~~~~~~~~~~~~~~~~~
