@@ -98,7 +98,7 @@ class AZ(BaseDestination):
         os.close(pipe_in)
         with os.fdopen(pipe_out, "wb") as pipe_out_file:
             try:
-                self.container_client.download_blob(blob_key).readinto(pipe_out_file)
+                self.container_client.download_blob(blob_key, max_concurrency=self.config.max_concurrency).readinto(pipe_out_file)
             except builtins.Exception as err:
                 LOG.error(f"Failed to download blob {blob_key}. Error: {type(err).__name__}, Reason: {err}")
                 raise err
@@ -162,7 +162,7 @@ class AZ(BaseDestination):
         """
         LOG.debug(f"Attempting to read blob: {self.render_path(filepath)}")
         try:
-            return self.container_client.download_blob(self.render_path(filepath), encoding="utf-8").read()
+            return self.container_client.download_blob(self.render_path(filepath), encoding="utf-8", max_concurrency=self.config.max_concurrency).read()
         except ae.ResourceNotFoundError:
             LOG.debug(f"File {self.render_path(filepath)} does not exist in container {self.config.container_name}")
             raise FileNotFound(
@@ -186,7 +186,7 @@ class AZ(BaseDestination):
         LOG.debug(f"Attempting to save blob: {self.render_path(filepath)}")
         with handler as file_obj:
             try:
-                self.container_client.upload_blob(self.render_path(filepath), file_obj)
+                self.container_client.upload_blob(self.render_path(filepath), file_obj, max_concurrency=self.config.max_concurrency)
             except builtins.Exception as err:
                 LOG.error(f"Failed to upload blob or it already exists. Error {type(err).__name__}, Reason: {err}")
                 raise err
@@ -204,7 +204,7 @@ class AZ(BaseDestination):
 
         LOG.debug(f"Attempting to write blob: {self.render_path(filepath)}")
         try:
-            self.container_client.upload_blob(self.render_path(filepath), content, overwrite=True)
+            self.container_client.upload_blob(self.render_path(filepath), content, overwrite=True, max_concurrency=self.config.max_concurrency)
         except builtins.Exception as err:
             LOG.error(f"Failed to upload or overwrite blob. Error {type(err).__name__}, Reason: {err}")
             raise err

@@ -22,6 +22,7 @@ class AZClientConfig:
         max_single_get_size (int): The maximum size of a single get operation in bytes. Defaults to 32MB.
         max_chunk_get_size (int): The maximum size of a chunk in bytes for get operations. Defaults to 4MB.
         audience (str, optional): The audience for the Azure Storage account. Defaults to None.
+        connection_timeout (int): The connection timeout in seconds. Defaults to 20.
     """
 
     api_version: t.Optional[str] = None
@@ -34,6 +35,7 @@ class AZClientConfig:
     max_single_get_size: int = 32 * 1024 * 1024  # 32MB
     max_chunk_get_size: int = 4 * 1024 * 1024  # 4MB
     audience: t.Optional[str] = None
+    connection_timeout: int = 20
 
     def validate(self) -> None:
         """Validates the configuration parameters for the Azure destination.
@@ -62,6 +64,8 @@ class AZClientConfig:
             raise ValueError("max_chunk_get_size must be a positive integer")
         if self.audience is not None and not isinstance(self.audience, str):
             raise ValueError("audience must be a string or undefined")
+        if not isinstance(self.connection_timeout, int) or self.connection_timeout <= 0:
+            raise ValueError("connection_timeout must be a positive integer")
 
     def __post_init__(self) -> None:
         self.validate()
@@ -76,12 +80,14 @@ class AZConfig:
         connection_string (str): Connection string for the Azure storage account.
         container_name (str): Name of the container in the Azure storage account.
         remote_path (str, optional): Remote base path in the container to store backups. Defaults to "/".
+        max_concurrency (int, optional): Maximum number of concurrent requests to the Azure Storage service. Defaults to 1.
     """
 
     client_config: AZClientConfig
     connection_string: str
     container_name: str
     remote_path: str = "/"
+    max_concurrency: int = 1
 
     def validate(self) -> None:
         """Validates the configuration parameters for the Azure destination.
@@ -98,6 +104,8 @@ class AZConfig:
             raise ValueError("container_name must be a string")
         if not isinstance(self.remote_path, str):
             raise ValueError("remote_path must be a string")
+        if not isinstance(self.max_concurrency, int) or self.max_concurrency <= 0:
+            raise ValueError("max_concurrency must be a positive integer")
 
     def __post_init__(self) -> None:
         self.validate()
