@@ -3,6 +3,10 @@
 import typing as t
 from dataclasses import dataclass
 
+AUTH_MODE_CONNECTION_STRING = "connection_string"
+AUTH_MODE_MANAGED_IDENTITY = "managed_identity"
+SUPPORTED_AUTH_MODES = (AUTH_MODE_CONNECTION_STRING, AUTH_MODE_MANAGED_IDENTITY)
+
 
 # Parameters taken from:
 # https://learn.microsoft.com/en-us/python/api/azure-storage-blob/azure.storage.blob.containerclient?view=azure-python#keyword-only-parameters
@@ -77,16 +81,31 @@ class AZConfig:
 
     Attributes:
         client_config (AZClientConfig): Configuration for the Azure Blob Container Client.
-        connection_string (str): Connection string for the Azure storage account.
         container_name (str): Name of the container in the Azure storage account.
+        auth_mode (str): Azure authentication mode. Defaults to connection_string.
+        connection_string (str, optional): Connection string for the Azure storage account.
+        account_url (str, optional): Blob service account URL used for managed identity authentication.
+        managed_identity_client_id (str, optional): User-assigned managed identity client ID. Mutually
+            exclusive with managed_identity_resource_id.
+        managed_identity_resource_id (str, optional): ARM resource ID of a user-assigned managed identity.
+            Preferred over managed_identity_client_id when multiple UAMIs are attached to the VM because
+            the resource ID is deterministic from naming and doesn't require reading the UAMI's GUID out
+            of Terraform. Mutually exclusive with managed_identity_client_id.
+        create_container_if_missing (bool, optional): Create the container if it does not exist.
+            Defaults to True.
         remote_path (str, optional): Remote base path in the container to store backups. Defaults to "/".
         max_concurrency (int, optional): Maximum number of concurrent requests to the Azure Storage service.
             Defaults to 1.
     """
 
     client_config: AZClientConfig
-    connection_string: str
     container_name: str
+    connection_string: t.Optional[str] = None
+    account_url: t.Optional[str] = None
+    auth_mode: str = AUTH_MODE_CONNECTION_STRING
+    managed_identity_client_id: t.Optional[str] = None
+    managed_identity_resource_id: t.Optional[str] = None
+    create_container_if_missing: bool = True
     remote_path: str = "/"
     max_concurrency: int = 1
 
@@ -99,14 +118,32 @@ class AZConfig:
 
         if not isinstance(self.client_config, AZClientConfig):
             raise ValueError("client_config must be an instance of AZClientConfig")
-        if not isinstance(self.connection_string, str):
-            raise ValueError("connection_string must be a string")
         if not isinstance(self.container_name, str):
             raise ValueError("container_name must be a string")
+        if self.connection_string is not None and not isinstance(self.connection_string, str):
+            raise ValueError("connection_string must be a string or undefined")
+        if self.account_url is not None and not isinstance(self.account_url, str):
+            raise ValueError("account_url must be a string or undefined")
+        if not isinstance(self.auth_mode, str) or self.auth_mode not in SUPPORTED_AUTH_MODES:
+            raise ValueError(f"auth_mode must be one of: {', '.join(SUPPORTED_AUTH_MODES)}")
+        if self.managed_identity_client_id is not None and not isinstance(self.managed_identity_client_id, str):
+            raise ValueError("managed_identity_client_id must be a string or undefined")
+        if self.managed_identity_resource_id is not None and not isinstance(self.managed_identity_resource_id, str):
+            raise ValueError("managed_identity_resource_id must be a string or undefined")
+        if self.managed_identity_client_id and self.managed_identity_resource_id:
+            raise ValueError(
+                "managed_identity_client_id and managed_identity_resource_id are mutually exclusive; set at most one"
+            )
+        if not isinstance(self.create_container_if_missing, bool):
+            raise ValueError("create_container_if_missing must be a boolean")
         if not isinstance(self.remote_path, str):
             raise ValueError("remote_path must be a string")
         if not isinstance(self.max_concurrency, int) or self.max_concurrency <= 0:
             raise ValueError("max_concurrency must be a positive integer")
+        if self.auth_mode == AUTH_MODE_CONNECTION_STRING and not self.connection_string:
+            raise ValueError("connection_string is required when auth_mode=connection_string")
+        if self.auth_mode == AUTH_MODE_MANAGED_IDENTITY and not self.account_url:
+            raise ValueError("account_url is required when auth_mode=managed_identity")
 
     def __post_init__(self) -> None:
         self.validate()

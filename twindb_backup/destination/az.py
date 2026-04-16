@@ -4,7 +4,6 @@ Module for Azure destination.
 """
 import builtins
 import os
-import socket
 import typing as t
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -14,10 +13,20 @@ import azure.core.exceptions as ae
 from azure.storage.blob import ContainerClient
 
 from twindb_backup import LOG
-from twindb_backup.configuration.destinations.az import AZConfig, drop_empty_dict_factory
+from twindb_backup.configuration.destinations.az import (
+    AUTH_MODE_MANAGED_IDENTITY,
+    AZConfig,
+    drop_empty_dict_factory,
+)
 from twindb_backup.copy.base_copy import BaseCopy
 from twindb_backup.destination.base_destination import BaseDestination
 from twindb_backup.destination.exceptions import FileNotFound
+
+try:
+    from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
+except ImportError:  # pragma: no cover - dependency is optional until managed identity is configured
+    DefaultAzureCredential = None
+    ManagedIdentityCredential = None
 
 
 class AZ(BaseDestination):
@@ -34,6 +43,7 @@ class AZ(BaseDestination):
             err: Raises an error if the client cannot be initialized
         """
         self.config = config
+        self._credential = None
 
         super(AZ, self).__init__(self.config.remote_path)
 
@@ -52,29 +62,64 @@ class AZ(BaseDestination):
         Returns:
             ContainerClient: An initialized ContainerClient
         """
-
-        client: ContainerClient = None
-
-        # Create the container client - validates connection string format
-        try:
-            client = ContainerClient.from_connection_string(
-                conn_str=self.config.connection_string,
-                container_name=self.config.container_name,
-                **asdict(self.config.client_config, dict_factory=drop_empty_dict_factory),
-            )
-        except builtins.ValueError as err:
-            LOG.error(f"Failed to create Azure Client. Error: {type(err).__name__}, Reason: {err}")
-            raise err
+        client = self._create_container_client()
 
         # Check if the container exists, if not, create it
         try:
             if not client.exists():
-                client.create_container()
+                if self.config.create_container_if_missing:
+                    client.create_container()
+                else:
+                    raise builtins.ValueError(
+                        f"Container {self.config.container_name} does not exist and "
+                        "create_container_if_missing is disabled"
+                    )
         except builtins.Exception as err:
             LOG.error(f"Failed to validate or create container. Error: {type(err).__name__}, Reason: {err}")
             raise err
 
         return client
+
+    def _create_container_client(self) -> ContainerClient:
+        client_kwargs = asdict(self.config.client_config, dict_factory=drop_empty_dict_factory)
+
+        try:
+            if self.config.auth_mode == AUTH_MODE_MANAGED_IDENTITY:
+                self._credential = self._build_managed_identity_credential()
+                return ContainerClient(
+                    account_url=self.config.account_url,
+                    container_name=self.config.container_name,
+                    credential=self._credential,
+                    **client_kwargs,
+                )
+
+            return ContainerClient.from_connection_string(
+                conn_str=self.config.connection_string,
+                container_name=self.config.container_name,
+                **client_kwargs,
+            )
+        except builtins.ValueError as err:
+            LOG.error(f"Failed to create Azure Client. Error: {type(err).__name__}, Reason: {err}")
+            raise err
+
+    def _build_managed_identity_credential(self):
+        """Pick the most specific managed-identity credential the config requests.
+
+        Precedence:
+          1. managed_identity_resource_id → ManagedIdentityCredential(identity_config={"resource_id": ...})
+          2. managed_identity_client_id   → ManagedIdentityCredential(client_id=...)
+          3. neither                      → DefaultAzureCredential() (covers system-assigned MI and local dev)
+        """
+        if ManagedIdentityCredential is None or DefaultAzureCredential is None:
+            raise ImportError("azure-identity is required when auth_mode=managed_identity")
+
+        if self.config.managed_identity_resource_id:
+            return ManagedIdentityCredential(
+                identity_config={"resource_id": self.config.managed_identity_resource_id}
+            )
+        if self.config.managed_identity_client_id:
+            return ManagedIdentityCredential(client_id=self.config.managed_identity_client_id)
+        return DefaultAzureCredential()
 
     def render_path(self, path: str) -> str:
         """Renders the absolute path for the Azure Blob Storage Destination

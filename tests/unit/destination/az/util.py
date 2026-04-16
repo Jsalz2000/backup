@@ -1,13 +1,18 @@
-import collections
+from collections.abc import Mapping
 from unittest.mock import MagicMock, patch
 
 from azure.storage.blob import ContainerClient
 
 import twindb_backup.destination.az as az
-from twindb_backup.configuration.destinations.az import AZClientConfig, AZConfig
+from twindb_backup.configuration.destinations.az import (
+    AUTH_MODE_CONNECTION_STRING,
+    AUTH_MODE_MANAGED_IDENTITY,
+    AZClientConfig,
+    AZConfig,
+)
 
 
-class AZClientConfigParams(collections.Mapping):
+class AZClientConfigParams(Mapping):
     def __init__(self, only_required=False) -> None:
 
         if not only_required:
@@ -33,10 +38,30 @@ class AZClientConfigParams(collections.Mapping):
         return self.__dict__[key]
 
 
-class AZConfigParams(collections.Mapping):
-    def __init__(self, only_required=False) -> None:
+class AZConfigParams(Mapping):
+    def __init__(
+        self,
+        only_required=False,
+        auth_mode=AUTH_MODE_CONNECTION_STRING,
+        managed_identity_client_id=None,
+        managed_identity_resource_id=None,
+        create_container_if_missing=True,
+    ) -> None:
         self.container_name = "test_container"
-        self.connection_string = "DefaultEndpointsProtocol=https;AccountName=ACCOUNT_NAME;AccountKey=ACCOUNT_KEY;EndpointSuffix=core.windows.net"
+        self.auth_mode = auth_mode
+        self.create_container_if_missing = create_container_if_missing
+
+        if auth_mode == AUTH_MODE_CONNECTION_STRING:
+            self.connection_string = (
+                "DefaultEndpointsProtocol=https;AccountName=ACCOUNT_NAME;"
+                "AccountKey=ACCOUNT_KEY;EndpointSuffix=core.windows.net"
+            )
+        elif auth_mode == AUTH_MODE_MANAGED_IDENTITY:
+            self.account_url = "https://account-name.blob.core.windows.net"
+            if managed_identity_client_id is not None:
+                self.managed_identity_client_id = managed_identity_client_id
+            if managed_identity_resource_id is not None:
+                self.managed_identity_resource_id = managed_identity_resource_id
 
         if not only_required:
             self.remote_path = "/himom/"

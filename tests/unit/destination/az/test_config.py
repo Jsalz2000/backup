@@ -2,7 +2,13 @@ from dataclasses import asdict
 
 import pytest
 
-from twindb_backup.configuration.destinations.az import AZClientConfig, AZConfig, drop_empty_dict_factory
+from twindb_backup.configuration.destinations.az import (
+    AUTH_MODE_CONNECTION_STRING,
+    AUTH_MODE_MANAGED_IDENTITY,
+    AZClientConfig,
+    AZConfig,
+    drop_empty_dict_factory,
+)
 
 from .util import AZClientConfigParams, AZConfigParams
 
@@ -17,8 +23,13 @@ def test_initialization_success():
 
     # AZConfig Assertions
     assert c.client_config == client_config
+    assert c.auth_mode == config_params.auth_mode
     assert c.connection_string == config_params.connection_string
+    assert c.account_url == None
     assert c.container_name == config_params.container_name
+    assert c.managed_identity_client_id == None
+    assert c.managed_identity_resource_id == None
+    assert c.create_container_if_missing == config_params.create_container_if_missing
     assert (
         c.remote_path == config_params.remote_path.strip("/")
         if config_params.remote_path != "/"
@@ -50,8 +61,13 @@ def test_initialization_success_defaults():
 
     # AZConfig Assertions
     assert c.client_config == client_config
+    assert c.auth_mode == AUTH_MODE_CONNECTION_STRING
     assert c.connection_string == config_params.connection_string
+    assert c.account_url == None
     assert c.container_name == config_params.container_name
+    assert c.managed_identity_client_id == None
+    assert c.managed_identity_resource_id == None
+    assert c.create_container_if_missing == True
     assert c.remote_path == "/"
     assert c.max_concurrency == 1
 
@@ -69,28 +85,131 @@ def test_initialization_success_defaults():
     assert c.client_config.connection_timeout == 20
 
 
+def test_initialization_success_managed_identity():
+    """Test initialization of AZConfig for managed identity auth."""
+    client_params = AZClientConfigParams(only_required=True)
+    config_params = AZConfigParams(
+        only_required=True,
+        auth_mode=AUTH_MODE_MANAGED_IDENTITY,
+        managed_identity_client_id="test-client-id",
+        create_container_if_missing=False,
+    )
+    client_config = AZClientConfig(**dict(client_params))
+
+    c = AZConfig(client_config=client_config, **dict(config_params))
+
+    assert c.client_config == client_config
+    assert c.auth_mode == AUTH_MODE_MANAGED_IDENTITY
+    assert c.connection_string == None
+    assert c.account_url == config_params.account_url
+    assert c.container_name == config_params.container_name
+    assert c.managed_identity_client_id == "test-client-id"
+    assert c.managed_identity_resource_id == None
+    assert c.create_container_if_missing == False
+    assert c.remote_path == "/"
+    assert c.max_concurrency == 1
+
+
+def test_initialization_success_managed_identity_resource_id():
+    """Test initialization of AZConfig for managed identity auth with resource_id."""
+    resource_id = (
+        "/subscriptions/00000000-0000-0000-0000-000000000000"
+        "/resourceGroups/example-rg"
+        "/providers/Microsoft.ManagedIdentity/userAssignedIdentities"
+        "/example-mi"
+    )
+    client_params = AZClientConfigParams(only_required=True)
+    config_params = AZConfigParams(
+        only_required=True,
+        auth_mode=AUTH_MODE_MANAGED_IDENTITY,
+        managed_identity_resource_id=resource_id,
+        create_container_if_missing=False,
+    )
+    client_config = AZClientConfig(**dict(client_params))
+
+    c = AZConfig(client_config=client_config, **dict(config_params))
+
+    assert c.auth_mode == AUTH_MODE_MANAGED_IDENTITY
+    assert c.managed_identity_client_id == None
+    assert c.managed_identity_resource_id == resource_id
+
+
 def test_invalid_params():
     """Test initialization of AZConfig with invalid parameters."""
 
     # Invalidate AZConfig
     with pytest.raises(ValueError):  # Invalid client_config
-        AZConfig(client_config={}, connection_string="test_connection_string", container_name="test_container")
+        AZConfig(client_config={}, container_name="test_container", connection_string="test_connection_string")
     with pytest.raises(ValueError):  # Invalid connection_string
-        AZConfig(client_config=AZClientConfig(), connection_string=123, container_name="test_container")
+        AZConfig(client_config=AZClientConfig(), container_name="test_container", connection_string=123)
+    with pytest.raises(ValueError):  # Missing connection_string for connection string auth
+        AZConfig(client_config=AZClientConfig(), container_name="test_container")
+    with pytest.raises(ValueError):  # Invalid auth_mode
+        AZConfig(
+            client_config=AZClientConfig(),
+            container_name="test_container",
+            auth_mode="service_principal",
+            connection_string="test_connection_string",
+        )
+    with pytest.raises(ValueError):  # Missing account_url for managed identity auth
+        AZConfig(
+            client_config=AZClientConfig(),
+            container_name="test_container",
+            auth_mode=AUTH_MODE_MANAGED_IDENTITY,
+        )
+    with pytest.raises(ValueError):  # Invalid account_url
+        AZConfig(
+            client_config=AZClientConfig(),
+            container_name="test_container",
+            auth_mode=AUTH_MODE_MANAGED_IDENTITY,
+            account_url=123,
+        )
+    with pytest.raises(ValueError):  # Invalid managed_identity_client_id
+        AZConfig(
+            client_config=AZClientConfig(),
+            container_name="test_container",
+            auth_mode=AUTH_MODE_MANAGED_IDENTITY,
+            account_url="https://account-name.blob.core.windows.net",
+            managed_identity_client_id=123,
+        )
+    with pytest.raises(ValueError):  # Invalid managed_identity_resource_id
+        AZConfig(
+            client_config=AZClientConfig(),
+            container_name="test_container",
+            auth_mode=AUTH_MODE_MANAGED_IDENTITY,
+            account_url="https://account-name.blob.core.windows.net",
+            managed_identity_resource_id=123,
+        )
+    with pytest.raises(ValueError, match="mutually exclusive"):  # Both client_id and resource_id set
+        AZConfig(
+            client_config=AZClientConfig(),
+            container_name="test_container",
+            auth_mode=AUTH_MODE_MANAGED_IDENTITY,
+            account_url="https://account-name.blob.core.windows.net",
+            managed_identity_client_id="test-client-id",
+            managed_identity_resource_id="/subscriptions/abc/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/name",
+        )
     with pytest.raises(ValueError):  # Invalid remote_path
         AZConfig(
             client_config=AZClientConfig(),
-            connection_string="test_connection_string",
             container_name="test_container",
+            connection_string="test_connection_string",
             remote_path=1,
         )
     with pytest.raises(ValueError):  # Invalid container_name
-        AZConfig(client_config=AZClientConfig(), connection_string="test_connection_string", container_name=1)
+        AZConfig(client_config=AZClientConfig(), container_name=1, connection_string="test_connection_string")
+    with pytest.raises(ValueError):  # Invalid create_container_if_missing
+        AZConfig(
+            client_config=AZClientConfig(),
+            container_name="test_container",
+            connection_string="test_connection_string",
+            create_container_if_missing="true",
+        )
     with pytest.raises(ValueError):  # Invalid max_concurrency
         AZConfig(
             client_config=AZClientConfig(),
-            connection_string="test_connection_string",
             container_name="test_container",
+            connection_string="test_connection_string",
             max_concurrency="1",
         )
 

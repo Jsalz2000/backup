@@ -92,16 +92,70 @@ In the ``[s3]`` section you specify Amazon credentials as well as an S3 bucket w
 Azure Blob Storage
 ~~~~~~~~~~~~~~~~~~~~
 
-In the ``[az]`` section you specify Azure credentials as well as Azure Blob Storage container where to store backups.
+In the ``[az]`` section you specify Azure authentication as well as the Azure Blob Storage container where to store backups.
+
+The default mode uses a storage connection string:
 
 .. code-block:: ini
 
     [az]
 
+    auth_mode = connection_string # optional, defaults to connection_string
     connection_string = "DefaultEndpointsProtocol=https;AccountName=ACCOUNT_NAME;AccountKey=ACCOUNT_KEY;EndpointSuffix=core.windows.net"
     container_name = twindb-backups
+    create_container_if_missing = true # optional, defaults to true
     remote_path = /backups/mysql # optional
     max_concurrency = 1 # optional
+
+For Azure VMs, managed identity authentication is also supported:
+
+.. code-block:: ini
+
+    [az]
+
+    auth_mode = managed_identity
+    account_url = "https://ACCOUNT_NAME.blob.core.windows.net"
+    container_name = twindb-backups
+    # Optional: target a specific user-assigned managed identity. Set at most ONE of:
+    #   managed_identity_resource_id = "/subscriptions/.../userAssignedIdentities/NAME"
+    #   managed_identity_client_id   = "00000000-0000-0000-0000-000000000000"
+    # If neither is set the system-assigned managed identity is used (DefaultAzureCredential).
+    create_container_if_missing = false # optional, defaults to true
+    remote_path = /backups/mysql # optional
+    max_concurrency = 1 # optional
+
+For Azure VM deployments, the recommended production setup is:
+
+- Use one **user-assigned managed identity (UAMI) per workload role** and attach it
+  to every VM that fills that role. Keeping a single stable identity across VM
+  rebuilds is easier to reason about than per-VM system-assigned identities, and
+  it lets you scope RBAC to the exact container the workload writes to.
+- Prefer ``managed_identity_resource_id`` over ``managed_identity_client_id``
+  when a VM has multiple UAMIs attached, or when you want the backup
+  configuration to be derivable from naming conventions instead of from a
+  Terraform output. The resource ID is the UAMI's full ARM ID, e.g.
+  ``/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<name>``.
+- Fall back to the VM's system-assigned managed identity (omit both
+  ``managed_identity_*`` fields) when a single identity per VM is sufficient.
+- Grant the identity the ``Storage Blob Data Contributor`` role scoped to the
+  target container. TwinDB currently reads, writes, lists, overwrites status
+  blobs, deletes old backups, and can optionally create the container, so it
+  still needs a role with blob read/write/delete plus container
+  read/write permissions.
+- Prefer ``create_container_if_missing = false`` when infrastructure pre-creates
+  the container. This lets operations scope permissions to the existing
+  container or storage account instead of depending on first-run container
+  creation.
+
+Use ``create_container_if_missing = false`` when the container should be pre-provisioned by infrastructure and the backup process should not attempt container creation.
+
+Validation checklist for the managed identity rollout:
+
+- From a developer workstation, validate the token-auth code path against an accessible non-production storage account by using ``account_url`` and Microsoft Entra credentials from ``DefaultAzureCredential``.
+- From the target Azure VM, validate the production path with no ``connection_string`` configured. Confirm backup upload, list/read operations, status blob updates, and any retention deletes that remain enabled in phase 1.
+- If the storage account uses network rules or private endpoints, run the validation from the VM or another allowed network path. Local validation may fail even when the identity and RBAC are correct.
+
+For the separate immutable-storage follow-on, see ``docs/azure_worm_compatibility.rst``.
 
 In the ``[az.client]`` section you specify optional Azure Blob Storage client options.
 
