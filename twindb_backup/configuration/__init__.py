@@ -227,13 +227,35 @@ class TwinDBBackupConfig:
         except NoOptionError:
             return None
 
-    def destination(self, backup_source=socket.gethostname()):
+    @property
+    def server_name(self):
+        """Identifier used to namespace backup paths and the status file.
+
+        Defaults to ``socket.gethostname()`` when ``[source] server_name``
+        is not set. Override it (e.g. to a cluster-wide identifier like
+        ``prod-primary-db``) to let every replica in a MySQL cluster
+        share a single backup path instead of one per hostname.
         """
-        :param backup_source: Hostname of the host where backup is taken from.
+        try:
+            value = self.__cfg.get("source", "server_name").strip().strip("\"'").strip()
+        except (NoOptionError, NoSectionError):
+            value = ""
+        return value or socket.gethostname()
+
+    def destination(self, backup_source=None):
+        """
+        :param backup_source: Identifier used to namespace per-source paths
+            on destinations that support it (SSH, S3, GCS). Defaults to
+            :pyattr:`server_name` (which in turn defaults to the local
+            hostname). Azure Blob does not use this argument — its path
+            layout is governed entirely by ``[source] server_name`` and
+            the destination's ``remote_path``.
         :type backup_source: str
         :return: Backup destination instance
         :rtype: BaseDestination
         """
+        if backup_source is None:
+            backup_source = self.server_name
         try:
             backup_destination = self.__cfg.get("destination", "backup_destination")
             if backup_destination == "ssh":

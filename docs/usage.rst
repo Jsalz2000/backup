@@ -40,6 +40,23 @@ Personally, I added it to skip files ``.gitignore`` would ignore.
     backup_dirs = /etc /root /home "/path/to/important files"
     tar_options = --exclude-vcs-ignores
 
+``server_name`` is an optional identifier that TwinDB Backup uses as the per-source
+segment of the remote backup path and of the status file. When unset, it defaults
+to the local hostname (``socket.gethostname()``), which produces one backup tree
+per host. When multiple replicas of a MySQL cluster back up to the same
+destination, set ``server_name`` to a cluster-wide identifier so every replica
+writes into a single shared path instead of a per-hostname fan-out. On Azure
+Blob destinations, setting ``server_name`` also enables a blob-lease-based
+single-writer gate so only one replica runs a given backup cycle at a time.
+
+.. code-block:: ini
+
+    [source]
+
+    backup_dirs = /etc /root /home
+    backup_mysql = yes
+    server_name = prod-primary-db
+
 
 Backup Destination
 ~~~~~~~~~~~~~~~~~~

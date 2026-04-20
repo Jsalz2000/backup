@@ -180,7 +180,7 @@ class MySQLSource(BaseSource):  # pylint: disable=too-many-instance-attributes
         self._file_name_prefix = "mysql"
         self.dst = kwargs.get("dst", None)
         self._xtrabackup = kwargs.get("xtrabackup_binary") or XTRABACKUP_BINARY
-        super(MySQLSource, self).__init__(run_type)
+        super(MySQLSource, self).__init__(run_type, server_name=kwargs.get("server_name"))
 
     @property
     def backup_tool(self):

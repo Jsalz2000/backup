@@ -88,7 +88,12 @@ def backup_files(run_type, config: TwinDBBackupConfig):
     try:
         for directory in config.backup_dirs:
             LOG.debug("copying %s", directory)
-            src = FileSource(directory, run_type, tar_options=config.tar_options)
+            src = FileSource(
+                directory,
+                run_type,
+                tar_options=config.tar_options,
+                server_name=config.server_name,
+            )
             dst = config.destination()
             _backup_stream(config, src, dst)
             src.apply_retention_policy(dst, config, run_type)
@@ -116,12 +121,13 @@ def backup_mysql(run_type, config: TwinDBBackupConfig):
 
     dst = config.destination()
     backup_start = time.time()
-    status = MySQLStatus(dst=dst)
+    status = MySQLStatus(dst=dst, status_directory=config.server_name)
 
     kwargs = {
         "backup_type": status.next_backup_type(config.mysql.full_backup, run_type),
         "dst": dst,
         "xtrabackup_binary": config.mysql.xtrabackup_binary,
+        "server_name": config.server_name,
     }
     parent = status.candidate_parent(run_type)
 
@@ -188,7 +194,7 @@ def backup_binlogs(run_type, config: TwinDBBackupConfig):  # pylint: disable=too
         return
 
     dst = config.destination()
-    status = BinlogStatus(dst=dst)
+    status = BinlogStatus(dst=dst, status_directory=config.server_name)
     mysql_client = MySQLClient(defaults_file=config.mysql.defaults_file, hostname=config.mysql.hostname)
     log_bin_basename = mysql_client.variable("log_bin_basename")
     if log_bin_basename is None:
@@ -205,7 +211,7 @@ def backup_binlogs(run_type, config: TwinDBBackupConfig):  # pylint: disable=too
         )
 
     for binlog_name in backup_set:
-        src = BinlogSource(run_type, mysql_client, binlog_name)
+        src = BinlogSource(run_type, mysql_client, binlog_name, server_name=config.server_name)
         binlog_copy = BinlogCopy(
             src.host,
             binlog_name,
@@ -287,20 +293,33 @@ def backup_everything(run_type, twindb_config, binlogs_only=False):
     """
     set_open_files_limit()
 
-    try:
-        if not binlogs_only:
-            backup_start = time.time()
-            backup_files(run_type, twindb_config)
-            backup_mysql(run_type, twindb_config)
-            backup_binlogs(run_type, twindb_config)
-            end = time.time()
-            save_measures(backup_start, end)
-        else:
-            backup_binlogs(run_type, twindb_config)
-    except configparser.NoSectionError as err:
-        LOG.debug(traceback.format_exc())
-        LOG.error(err)
-        exit(1)
+    # Gate the whole run behind a destination-level lock so that only one
+    # replica in a MySQL cluster uploads backups at a time. On
+    # destinations without native coordination this is a no-op.
+    coordinator = twindb_config.destination()
+    with coordinator.cluster_lock(twindb_config.server_name) as lock:
+        if not lock.acquired:
+            LOG.info(
+                "Skipping %s backup: another cluster member holds the lock for %s.",
+                run_type,
+                twindb_config.server_name,
+            )
+            return
+
+        try:
+            if not binlogs_only:
+                backup_start = time.time()
+                backup_files(run_type, twindb_config)
+                backup_mysql(run_type, twindb_config)
+                backup_binlogs(run_type, twindb_config)
+                end = time.time()
+                save_measures(backup_start, end)
+            else:
+                backup_binlogs(run_type, twindb_config)
+        except configparser.NoSectionError as err:
+            LOG.debug(traceback.format_exc())
+            LOG.error(err)
+            exit(1)
 
 
 @contextmanager
