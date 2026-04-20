@@ -6,6 +6,7 @@ import configparser
 import errno
 import fcntl
 import signal
+import socket
 import time
 import traceback
 from contextlib import contextmanager
@@ -31,6 +32,7 @@ from twindb_backup.source.mariadb_source import MariaDBSource
 from twindb_backup.source.mysql_source import MySQLClient, MySQLConnectInfo, MySQLFlavor, MySQLSource
 from twindb_backup.ssh.exceptions import SshClientException
 from twindb_backup.status.binlog_status import BinlogStatus
+from twindb_backup.status.exceptions import CorruptedStatus
 from twindb_backup.status.mysql_status import MySQLStatus
 from twindb_backup.util import my_cnfs
 
@@ -181,8 +183,82 @@ def backup_mysql(run_type, config: TwinDBBackupConfig):
         callback[0].callback(**callback[1])
 
 
+def _binlog_status_directory(config: TwinDBBackupConfig) -> str:
+    """Return the per-replica ``status_directory`` used for the binlog
+    status file.
+
+    With a cluster-wide ``[source] server_name``, multiple replicas share
+    one backup tree. Binlog filenames are already per-replica (MySQL
+    embeds the hostname in ``log_bin_basename``) so each replica can
+    safely upload its own binlog stream into that shared tree. Giving
+    each replica its own ``binlog-status`` blob lets every replica track
+    its own upload history independently and avoids a well-known
+    single-source failure mode where one replica's filename prefix would
+    otherwise "lock out" the others via the global ``binlog > last``
+    string comparison in :func:`binlogs_to_backup`.
+    """
+    return osp.join(config.server_name, socket.gethostname())
+
+
+def _seed_binlog_status_from_legacy(dst, status: BinlogStatus, config: TwinDBBackupConfig) -> None:
+    """One-time migration from the legacy shared binlog status.
+
+    Older versions wrote a single ``<server_name>/binlog-status`` blob
+    shared by every replica. After upgrading, each replica now reads a
+    per-host blob at ``<server_name>/<hostname>/binlog-status`` which
+    does not yet exist. Without migration the next run would attempt to
+    re-upload every binlog that previously made it up, which fails on
+    Azure (``upload_blob`` with no ``overwrite`` flag) for any blob that
+    already exists.
+
+    This helper seeds the per-host status with the entries from the
+    legacy blob that look like they belong to this replica. MySQL
+    prefixes every binlog filename with the server hostname (see
+    ``log_bin_basename``), so a simple ``startswith`` against the short
+    hostname matches reliably.
+
+    The legacy blob is left in place — it is harmless, callers can
+    delete it manually once all replicas have rolled over.
+    """
+    if len(status) > 0:
+        return
+    try:
+        legacy = BinlogStatus(dst=dst, status_directory=config.server_name)
+    except CorruptedStatus as err:
+        # A corrupt legacy blob should not block the upgrade path. Start
+        # fresh and log it so an operator can investigate.
+        LOG.warning(
+            "Ignoring corrupt legacy binlog status at %s/binlog-status: %s",
+            config.server_name,
+            err,
+        )
+        return
+    if len(legacy) == 0:
+        return
+    short_host = socket.gethostname().split(".")[0]
+    seeded = 0
+    for copy in legacy:
+        if copy.name.startswith(short_host + "_"):
+            status.add(copy)
+            seeded += 1
+    if seeded:
+        status.save(dst)
+        LOG.info(
+            "Seeded per-host binlog status for %s with %d entries from legacy shared status.",
+            short_host,
+            seeded,
+        )
+
+
 def backup_binlogs(run_type, config: TwinDBBackupConfig):  # pylint: disable=too-many-locals
     """Copy MySQL binlog files to the backup destination.
+
+    Binlog uploads run on *every* replica independently — each replica
+    tracks its own progress via a per-host ``binlog-status`` blob (see
+    :func:`_binlog_status_directory`). Blob names are unique per
+    replica because MySQL embeds the hostname in each binlog filename,
+    so multiple replicas writing into the same ``<server_name>/binlog/``
+    directory do not collide.
 
     :param run_type: Run type
     :type run_type: str
@@ -193,13 +269,15 @@ def backup_binlogs(run_type, config: TwinDBBackupConfig):  # pylint: disable=too
         LOG.debug("No MySQL config, not copying binlogs")
         return
 
-    dst = config.destination()
-    status = BinlogStatus(dst=dst, status_directory=config.server_name)
     mysql_client = MySQLClient(defaults_file=config.mysql.defaults_file, hostname=config.mysql.hostname)
     log_bin_basename = mysql_client.variable("log_bin_basename")
     if log_bin_basename is None:
         return
     binlog_dir = osp.dirname(log_bin_basename)
+
+    dst = config.destination()
+    status = BinlogStatus(dst=dst, status_directory=_binlog_status_directory(config))
+    _seed_binlog_status_from_legacy(dst, status, config)
 
     # last_copy = status.latest_backup
     LOG.debug("Latest copied binlog %s", status.latest_backup)
@@ -282,9 +360,23 @@ def set_open_files_limit():
 
 def backup_everything(run_type, twindb_config, binlogs_only=False):
     """
-    Run backup job
+    Run backup job.
 
-    :param run_type: hourly, daily, etc
+    Full/incremental MySQL backups and file backups are gated behind a
+    destination-level cluster lock so that only one replica in a MySQL
+    cluster performs the heavy work for a given run. On destinations
+    without native coordination the lock is a no-op.
+
+    Binlog uploads deliberately run *without* the cluster lock: every
+    replica's binlogs are valuable for PITR redundancy, binlog blob
+    names are already per-replica (MySQL embeds the hostname in the
+    filename), and each replica tracks its own progress via a per-host
+    ``binlog-status`` blob. Running binlogs independently also avoids a
+    race where a short-lived binlog upload on one replica could cause
+    another replica's hourly backup at the top of the hour to skip
+    because the cluster lock was transiently held.
+
+    :param run_type: hourly, daily, etc.
     :type run_type: str
     :param twindb_config: ConfigParser instance
     :type twindb_config: TwinDBBackupConfig
@@ -293,9 +385,15 @@ def backup_everything(run_type, twindb_config, binlogs_only=False):
     """
     set_open_files_limit()
 
-    # Gate the whole run behind a destination-level lock so that only one
-    # replica in a MySQL cluster uploads backups at a time. On
-    # destinations without native coordination this is a no-op.
+    if binlogs_only:
+        try:
+            backup_binlogs(run_type, twindb_config)
+        except configparser.NoSectionError as err:
+            LOG.debug(traceback.format_exc())
+            LOG.error(err)
+            exit(1)
+        return
+
     coordinator = twindb_config.destination()
     with coordinator.cluster_lock(twindb_config.server_name) as lock:
         if not lock.acquired:
@@ -307,15 +405,12 @@ def backup_everything(run_type, twindb_config, binlogs_only=False):
             return
 
         try:
-            if not binlogs_only:
-                backup_start = time.time()
-                backup_files(run_type, twindb_config)
-                backup_mysql(run_type, twindb_config)
-                backup_binlogs(run_type, twindb_config)
-                end = time.time()
-                save_measures(backup_start, end)
-            else:
-                backup_binlogs(run_type, twindb_config)
+            backup_start = time.time()
+            backup_files(run_type, twindb_config)
+            backup_mysql(run_type, twindb_config)
+            backup_binlogs(run_type, twindb_config)
+            end = time.time()
+            save_measures(backup_start, end)
         except configparser.NoSectionError as err:
             LOG.debug(traceback.format_exc())
             LOG.error(err)

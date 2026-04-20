@@ -6,8 +6,10 @@ from __future__ import print_function
 
 import os
 import shutil
+import socket
 import tempfile
 import traceback
+from os import path as osp
 
 import click
 
@@ -166,18 +168,30 @@ def share_backup(ctx, s3_url):
 @click.option("--type", "copy_type", type=click.Choice(MEDIA_TYPES), default="mysql")
 @click.option(
     "--hostname",
-    help="Identifier that namespaced the backup path (matches "
-    "``[source] server_name`` in the config; falls back to the local hostname).",
+    help=(
+        "Identifier that namespaces the backup path. For --type mysql / "
+        "--type files this matches ``[source] server_name`` in the config "
+        "and falls back to the local hostname. For --type binlog, which is "
+        "tracked per replica under the cluster-wide ``server_name`` tree, "
+        "this specifies which replica's upload history to print and falls "
+        "back to the local hostname."
+    ),
     show_default=False,
     default=None,
 )
 @click.pass_context
 def status(ctx, copy_type, hostname):
     """Print backups status"""
-    if not hostname:
-        hostname = ctx.obj["twindb_config"].server_name
-    dst = ctx.obj["twindb_config"].destination(backup_source=hostname)
-    print(MEDIA_STATUS_MAP[copy_type](dst=dst, status_directory=hostname))
+    cfg = ctx.obj["twindb_config"]
+    if copy_type == "binlog":
+        replica = hostname or socket.gethostname()
+        dst = cfg.destination(backup_source=cfg.server_name)
+        status_directory = osp.join(cfg.server_name, replica)
+    else:
+        target = hostname or cfg.server_name
+        dst = cfg.destination(backup_source=target)
+        status_directory = target
+    print(MEDIA_STATUS_MAP[copy_type](dst=dst, status_directory=status_directory))
 
 
 @main.group("restore")

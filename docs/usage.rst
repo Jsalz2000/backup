@@ -57,6 +57,15 @@ single-writer gate so only one replica runs a given backup cycle at a time.
     backup_mysql = yes
     server_name = prod-primary-db
 
+MySQL binary logs are treated specially: their uploads deliberately
+bypass the cluster-wide single-writer gate so that every replica can
+upload its own binlog stream for PITR redundancy. Each replica tracks
+its own progress via a per-host ``binlog-status`` blob at
+``<server_name>/<hostname>/binlog-status`` under the destination. Full
+and incremental MySQL backups (hourly/daily/weekly/monthly/yearly) and
+file backups remain gated behind the cluster lock so only one replica
+produces those large payloads.
+
 
 Backup Destination
 ~~~~~~~~~~~~~~~~~~
